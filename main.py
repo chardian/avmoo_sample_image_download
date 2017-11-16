@@ -29,7 +29,8 @@ class DownloadTool(object):
         "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/536.3 (KHTML, like Gecko) Chrome/19.0.1061.1 Safari/536.3",
         "Mozilla/5.0 (Windows NT 6.2) AppleWebKit/536.3 (KHTML, like Gecko) Chrome/19.0.1061.0 Safari/536.3",
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.24 (KHTML, like Gecko) Chrome/19.0.1055.1 Safari/535.24",
-        "Mozilla/5.0 (Windows NT 6.2; WOW64) AppleWebKit/535.24 (KHTML, like Gecko) Chrome/19.0.1055.1 Safari/535.24"]
+        "Mozilla/5.0 (Windows NT 6.2; WOW64) AppleWebKit/535.24 (KHTML, like Gecko) Chrome/19.0.1055.1 Safari/535.24",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.91 Safari/537.36"]
 
     def __init__(self):
         super(DownloadTool, self).__init__()
@@ -39,6 +40,11 @@ class DownloadTool(object):
         header = {'User-Agent': random.choice(DownloadTool.HEADER_POOL)}
         print header
         return header
+
+    @staticmethod
+    def to_path(path):
+        if type(path) == str:
+            return path.decode('utf-8').encode('gbk')
 
 
 class Avmoo(object):
@@ -52,37 +58,46 @@ class Avmoo(object):
         super(Avmoo, self).__init__()
         self.__porn_star_name = porn_star_name
         self.__porn_star_url = porn_star_url
-        self.__search_page_file_name = '{}_search.txt'.format(porn_star_name)
-        self.__av_list_file_name = '{}_av_list.txt'.format(porn_star_name)
-        self.__img_list_file_name = '{}_img_list.txt'.format(porn_star_name)
-        self.__img_path = Avmoo.IMG_PATH + porn_star_name + '/'
+        self.__search_page_file_name = DownloadTool.to_path('{}_search.txt'.format(porn_star_name))
+        self.__av_list_file_name = DownloadTool.to_path('{}_av_list.txt'.format(porn_star_name))
+        self.__img_list_file_name = DownloadTool.to_path('{}_img_list.txt'.format(porn_star_name))
+        self.__img_path = DownloadTool.to_path(Avmoo.IMG_PATH + porn_star_name + '/')
         if not os.path.exists(self.__img_path):
             os.mkdir(self.__img_path)
         self.__page = 0
 
     def __call__(self, *args, **kwargs):
-        # self.store_search_page_data(2)
-        # self.store_search_page_data(3)
-        # self.store_search_page_data(4)
+        # self.store_all_search_page_data(1)
         # self.resolve_search_page_data()
-        # self.store_all_av_image_url()
+        #self.store_all_av_image_url()
         # self.download_all_image()
-        self.multi_thread_download_all_image()
+        self.multi_thread_download_all_image(100)
+
+    def store_all_search_page_data(self, page):
+        for i in xrange(1, page + 1):
+            self.store_search_page_data(i)
 
     def store_search_page_data(self, page):
         if page == 1:
             url = self.__porn_star_url
         else:
             url = '{}/page/{}'.format(self.__porn_star_url, page)
-        page_request = requests.get(url, headers=DownloadTool.get_random_headers(), timeout=30)
-        page_request.encoding = 'GBK'
-        page_text = page_request.content
-        temp = open(self.__search_page_file_name, 'a')
-        temp.write(page_text)
-        temp.flush()
-        temp.close()
+        try:
+            page_request = requests.get(url, headers=DownloadTool.get_random_headers(), timeout=30)
+            page_request.encoding = 'GBK'
+            page_text = page_request.content
+            temp = open(self.__search_page_file_name, 'a')
+            temp.write(page_text)
+            temp.flush()
+            temp.close()
+            time.sleep(1.0)
+        except:
+            print 'get page data error, try again', page
+            time.sleep(1.0)
+            self.store_search_page_data(page)
 
     def resolve_search_page_data(self):
+        """解析搜索页面，生成AV网址列表,无网络连接"""
         if not os.path.exists(self.__search_page_file_name):
             print 'has no this file:', self.__search_page_file_name
             return
@@ -101,9 +116,10 @@ class Avmoo(object):
     def store_all_av_image_url(self):
         av_list = open(self.__av_list_file_name, 'r')
         for av_info in av_list:
-            arr = av_info.split(Avmoo.SPLIT_CHAR)
-            print u'开始解析这部AV:  ', arr[0]
-            self.store_av_image_url(arr[0], arr[1])
+            av_info = av_info.strip()
+            av_name,av_url = av_info.split(Avmoo.SPLIT_CHAR)
+            print u'开始解析这部AV:  ',av_name
+            self.store_av_image_url(av_name,av_url)
 
     def store_av_image_url(self, av_name, av_url):
         print u'获取这部AV的所有样例图片地址 ', av_name, av_url
@@ -123,10 +139,11 @@ class Avmoo(object):
         soup = BeautifulSoup(page_text, 'html.parser', from_encoding='gb18030')
         # page_text.close()
         stars = soup.find_all('a', class_='avatar-box')
-        if len(stars) == 1:
+        if len(stars) == 1 and stars[0].span.text == self.__porn_star_name:
             print u'是单体片，开始解析'
             sample_img_list = soup.find_all('a', class_='sample-box')
-            sample_url_list = [sample_node.attrs['href'] + '\n' for sample_node in sample_img_list]
+            sample_url_list = [av_url + Avmoo.SPLIT_CHAR + sample_node.attrs['href'] + '\n' for sample_node in
+                               sample_img_list]
             file_img_list = open(self.__img_list_file_name, 'a')
             file_img_list.writelines(sample_url_list)
             file_img_list.flush()
@@ -141,13 +158,14 @@ class Avmoo(object):
         self.download_image(image_url_list)
 
     def download_image(self, image_url_list, thread_num=0):
-        for img_url in image_url_list:
-            img_url = img_url.strip()
+        for av_url_img_url in image_url_list:
+            av_url_img_url = av_url_img_url.strip()
+            av_url, img_url = av_url_img_url.split(Avmoo.SPLIT_CHAR)
             left = img_url.rfind('/') + 1
             img_path = self.__img_path + img_url[left:]
             if not os.path.exists(img_path):
-                print u'开始下载图片, thread_num : ', thread_num, '   img_url', img_url
-
+                print u'开始下载图片, thread_num : ', thread_num, '   img_url', img_url,'----'
+                #TODO: 把URL链接写入到图片上，加水印就好了。
                 try:
                     r = requests.get(img_url, headers=DownloadTool.get_random_headers(), timeout=30)
                     if r and r.content:
@@ -163,13 +181,13 @@ class Avmoo(object):
             else:
                 print u'图片文件已存在 thread_num', thread_num, '  img_url', img_url
 
-    def multi_thread_download_all_image(self):
+    def multi_thread_download_all_image(self, splice_num = 100):
         print u'多线程下载图片'
         file_img_list = open(self.__img_list_file_name, 'r')
         lines = file_img_list.readlines()
         threads = []
-        for i in range(0, len(lines), 100):
-            image_list = lines[i:i + 100]
+        for i in range(0, len(lines), splice_num):
+            image_list = lines[i:i + splice_num]
             t = threading.Thread(target=self.download_image, args=(image_list, i))
             threads.append(t)
             t.start()
@@ -182,8 +200,5 @@ if __name__ == '__main__':
     reload(sys)
     # this is actually useful
     sys.setdefaultencoding('utf-8')
-    moo = Avmoo('https://avmo.club/cn/search/%E4%B8%83%E8%8D%89%E3%81%A1%E3%81%A8%E3%81%9B', 'qicao')
+    moo = Avmoo('https://avmo.club/cn/star/305', 'めぐり')
     moo(*sys.argv)
-    # 1528
-    # 1555
-    # 1566
